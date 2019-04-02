@@ -10,13 +10,13 @@ class CarBase:
             self.car_type = car_type
         self.brand = brand
         self.photo_file_name = photo_file_name
-        if carrying == '':
-            self.carrying = carrying
-        else:
+        try:
             self.carrying = float(carrying)
+        except ValueError:
+            self.carrying = ''
 
     def get_photo_file_ext(self):
-        path_ext = path.splitext(self.photo_file_name)
+        path_ext = os.path.splitext(self.photo_file_name)
         return path_ext[1]
         
 class Car(CarBase):
@@ -26,14 +26,22 @@ class Car(CarBase):
 
 
 class Truck(CarBase):
-    def __init__(self, car_type, brand, photo_file_name, body_whl, carrying):
+    def __init__(self, car_type, brand, photo_file_name, carrying, body_whl):
         super().__init__(car_type, brand, photo_file_name, carrying)
         self.body_whl = body_whl
-        if body_whl is "":
-            self.body_length, self.body_width, self.body_height = float(0)
+        if self.body_whl == '':
+            try:
+                self.body_length, self.body_width, self.body_height = float(0)
+            except ValueError:
+                pass
+            except TypeError:
+                pass
         else:
-            self.body_length, self.body_width, self.body_height = [float(param) for param in body_whl.split('x')]
-
+            try:
+                self.body_length, self.body_width, self.body_height = [float(param) for param in self.body_whl.split('x')]
+            except ValueError:
+                print("Float Error_2")
+                
     def get_body_volume(self):
         volume = self.body_length * self.body_width * self.body_height
         return volume 
@@ -44,46 +52,62 @@ class SpecMachine(CarBase):
         super().__init__(car_type, brand, photo_file_name, carrying)
         self.extra = extra
 
-
-def get_car_list(csv_filename):
-
-    variable_dict = {}
-    cars_list = []
-
-    def make_vars(name, container, index=0):
-        for _ in range(len(container)):
-            key = '{}{}'.format(name, index)
-            value = container[index]
-            if value == []:
+class CsvParser:
+    
+    done = False
+    
+    def __init__(self, lst):
+        self.lst = lst
+              
+    @property
+    def attr_to_init(self):
+        attrs_lst = self._clear(self.csv_dict())
+        return attrs_lst
+    
+    def _clear(self, container):
+        cleared_dict = {}
+        for key, value in container.items():
+            try:
+                assert len(value) > 5
+                if value[0] == 'car':
+                    assert Car(*value[0:5])
+                elif value[0] == 'truck':
+                    assert Truck(*value[0:5])
+                elif value[0] == 'spec_machine':
+                    assert SpecMachine(*value[0:5])
+            except AssertionError:
                 continue
             else:
-                variable_dict[key] = value
+                cleared_dict[key] = value
+        CsvParser.done = True
+        return list(cleared_dict.values())
+    
+    def csv_dict(self, sub_id='car_id_', index=0):
+        vars_dict = {}
+        for _ in range(len(self.lst)):
+            key = '{}{}'.format(sub_id, index)
+            value = self.lst[index]
+            vars_dict[key] = value
             index += 1
-
-    def make_list(index=0):
-        dict_list = [value for value in variable_dict.items()]
-        while index < len(dict_list):
-            element = dict_list[index]
-            try:
-                if element[1][0] == 'car':
-                    cars_list.append(Car(*element[1][0:5]))
-                elif element[1][0] == 'truck':
-                    cars_list.append(Truck(*element[1][0:5]))
-                elif element[1][0] == 'spec_machine':
-                    cars_list.append(SpecMachine(*element[1][0:5]))
-            except(ValueError, TypeError):
-                pass
-            index += 1
-
+        return vars_dict
+    
+def get_car_list(csv_filename):
+    
+    rows_list = []
+    car_list = []
+    parser = CsvParser(rows_list)
+    
     with open(csv_filename) as csv_fd:
         reader = csv.reader(csv_fd, delimiter=";")
         next(reader)
-        rows_list = []
         for row in reader:
             rows_list.append(row)
 
-        make_vars('car', rows_list)
-        make_list()
-
-    return cars_list
-
+    for value in parser.attr_to_init:
+        if value[0] == 'car':
+            car_list.append(Car(*value[0:5]))
+        elif value[0] == 'truck':
+            car_list.append(Truck(*value[0:5]))
+        elif value[0] == 'spec_machine':
+            car_list.append(SpecMachine(*value[0:5]))
+    return car_list
