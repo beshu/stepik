@@ -5,7 +5,7 @@ class Client:
 		self.port = port
 		self.timeout = timeout
 
-	def put(self):
+	def put(self, metric_name, metric_value, timestamp):
 		pass
 
 	def get(self):
