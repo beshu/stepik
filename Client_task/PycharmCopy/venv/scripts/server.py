@@ -14,7 +14,7 @@ class ClientServerProtocol(asyncio.Protocol):
         handler.add_metric()
         print('Data received: {!r}'.format(message))
 
-        print('Send: {!r}'.format(handler.__dict__))
+        print('Following instance created with keys: {!r}'.format(handler.__dict__))
         self.transport.write(handler.get_dict())
 
         print('Close the client socket')
