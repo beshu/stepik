@@ -1,7 +1,5 @@
 import asyncio
 
-
-
 class ClientServerProtocol(asyncio.Protocol):
     def connection_made(self, transport):
         self.transport = transport
@@ -10,18 +8,23 @@ class ClientServerProtocol(asyncio.Protocol):
 
     def data_received(self, data):
         message = data.decode()
-        handler = ClientServerProtocol.process(message)
-        handler.add_metric()
-        print('Data received: {!r}'.format(message))
+        metric_handler = self.create_handler(message)
+        server_action = metric_handler.method
 
-        print('Following instance created with keys: {!r}'.format(handler.__dict__))
-        self.transport.write(handler.get_dict())
+        if server_action == 'put':
+            metric_handler.add_metric()
+            self.transport.write(b"OK")
+        elif server_action == 'get':
+            response = metric_handler.get_metric()
+            self.transport.write(response)
 
+        print('All entries: {!r}'.format(metric_handler.__dict__))
+        #self.transport.write(metric_handler.get_dict())
         print('Close the client socket')
         self.transport.close()
 
     @staticmethod
-    def process(message):
+    def create_handler(message):
         args = message.split()
         return MetricHandler(*args)
 
@@ -36,12 +39,37 @@ class MetricHandler:
         self.value = value
         self.timestamp = timestamp
 
+    @property
+    def metric_not_found(self):
+        if self.key not in self.metric_dict.keys():
+            return True
+
     def add_metric(self):
-        MetricHandler.metric_dict[self.key] = self.value
+        if self.metric_not_found:
+            self.metric_dict[self.key] = [(self.value, self.timestamp)]
+        else:
+            self.metric_update()
+
+    def metric_update(self):
+        value_list = self.metric_dict[self.key]
+        new_value = value_list + [(self.value, self.timestamp)]
+        self.metric_dict[self.key] = new_value
+
+    def get_metric(self):
+        response_dict = {}
+        try:
+            if self.key == '*':
+                response_dict.update(self.metric_dict)
+            else:
+                response_dict.update({self.key:self.metric_dict[self.key]})
+            data = str(response_dict)
+            return data.encode()
+        except KeyError:
+            return str(dict()).encode()
 
     def get_dict(self):
-        response = str(MetricHandler.metric_dict)
-        return response.encode()
+        data = str(self.metric_dict)
+        return data.encode()
 
 
 
