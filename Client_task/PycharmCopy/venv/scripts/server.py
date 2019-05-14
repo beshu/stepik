@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 class ClientServerProtocol(asyncio.Protocol):
     def connection_made(self, transport):
@@ -8,33 +9,36 @@ class ClientServerProtocol(asyncio.Protocol):
 
     def data_received(self, data):
         message = data.decode()
-        metric_handler = self.create_handler(message)
-        server_action = metric_handler.method
+        try:
+            metric_handler = self.create_handler(message)
+        except CommandError:
+            self.transport.write(b"error\nwrong command\n\n")
+        else:
+            server_action = metric_handler.method
+            if server_action == 'put':
+                metric_handler.add_metric()
+                self.transport.write(b"OK\n\n")
+            elif server_action == 'get':
+                metric = metric_handler.get_metric()
+                response = "ok\n{}\n\n".format(metric).encode()
+                self.transport.write(response)
 
-        if server_action == 'put':
-            metric_handler.add_metric()
-            self.transport.write(b"OK")
-        elif server_action == 'get':
-            response = metric_handler.get_metric()
-            self.transport.write(response)
-
-        print('All entries: {!r}'.format(metric_handler.__dict__))
-        #self.transport.write(metric_handler.get_dict())
-        print('Close the client socket')
-        self.transport.close()
+        #print('All entries: {!r}'.format(metric_handler.__dict__))
 
     @staticmethod
     def create_handler(message):
         args = message.split()
         return MetricHandler(*args)
 
-
 class MetricHandler:
 
     metric_dict = {}
 
     def __init__(self, method, key=None, value=None, timestamp=None):
-        self.method = method
+        if method not in ('put','get'):
+            raise CommandError
+        else:
+            self.method = method
         self.key = key
         self.value = value
         self.timestamp = timestamp
@@ -70,6 +74,38 @@ class MetricHandler:
     def get_dict(self):
         data = str(self.metric_dict)
         return data.encode()
+
+
+class DictParser:
+
+    def __init__(self, dictionary, action):
+        self.dictionary = dictionary
+        self.action = action
+
+    def __repr__(self):
+        pass
+
+
+    def parse_all(self):
+        all_metrics = self.dictionary.items()
+        strings_list = ['%s %s \n' % (key, value) for (key, value) in all_metrics]
+        for element in strings_list:
+            element = self.delete_brackets(element)
+        return strings_list
+
+    def parse_multi_value(self):
+        values = self.dictionary.values()
+
+
+    def parse_single_value(self):
+        pass
+
+    @staticmethod
+    def delete_brackets(str):
+        return re.sub('\[|\]|\(|\)', '', str)
+
+class CommandError(Exception):
+    pass
 
 
 
