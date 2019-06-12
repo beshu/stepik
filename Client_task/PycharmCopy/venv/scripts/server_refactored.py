@@ -15,15 +15,16 @@ class ClientServerProtocol(asyncio.Protocol):
             self.transport.write(b"error\nwrong command\n\n")
         else:
             server_action = metric_handler.method
-            if server_action == 'put':
-                metric_handler.add_metric()
-                self.transport.write(b"OK\n\n")
-            elif server_action == 'get':
-                metric = metric_handler.get_metric()
-                response = "ok\n{}\n\n".format(metric).encode()
-                self.transport.write(response)
+            self.action(server_action)
 
-        #print('All entries: {!r}'.format(metric_handler.__dict__))
+    def action(self, server_action):
+        if server_action == 'put':
+            MetricHandler.add_metric()
+            self.transport.write(b"OK\n\n")
+        elif server_action == 'get':
+            metric = MetricHandler.get_metric()
+            response = "ok\n{}\n\n".format(metric).encode()
+            self.transport.write(response)
 
     @staticmethod
     def create_handler(message):
@@ -33,6 +34,7 @@ class ClientServerProtocol(asyncio.Protocol):
 class MetricHandler:
 
     metric_dict = {}
+    multi_vals = {}
 
     def __init__(self, method, key=None, value=None, timestamp=None):
         if method not in ('put', 'get'):
@@ -48,9 +50,11 @@ class MetricHandler:
         if self.key not in self.metric_dict.keys():
             return True
 
+
     def add_metric(self):
         if self.metric_not_found:
             self.metric_dict[self.key] = [(self.value, self.timestamp)]
+            self.multi_vals[self.key] = 0
         else:
             self.metric_update()
 
@@ -58,51 +62,52 @@ class MetricHandler:
         value_list = self.metric_dict[self.key]
         new_value = value_list + [(self.value, self.timestamp)]
         self.metric_dict[self.key] = new_value
+        self.multi_vals[self.key] += 1
 
     def get_metric(self):
-        response_dict = {}
         try:
             if self.key == '*':
-                response_dict.update(self.metric_dict)
+                data = MetricParser.parse_all()
+            elif multi_vals[self.key] > 0:
+                data = MetricParser.parse_multi_value(self.key, multi_vals[self.key])
             else:
-                response_dict.update({self.key:self.metric_dict[self.key]})
-            data = str(response_dict)
-            return data.encode()
+                data = MetricParser.parse_single_value(self.key)
         except KeyError:
-            return str(dict()).encode()
+            raise CommandError
 
-    def get_dict(self):
-        data = str(self.metric_dict)
-        return data.encode()
+class MetricParser:
 
-
-class DictParser:
-
-    def __init__(self, dictionary, action):
-        self.dictionary = dictionary
-        self.action = action
+    def __init__(self):
+        self.dictionary = MetricHandler.metric_dict
+        self.keys = self.dictionary.keys()
+        self.values = self.dictionary.values()
+        self.items = self.dictionary.items()
 
     def __repr__(self):
         pass
 
     def parse_all(self):
-        all_metrics = self.dictionary.items()
-        strings_list = ['%s %s \n' % (key, value) for (key, value) in all_metrics]
-        for element in strings_list:
+        all_keys_list = ['%s %s \n' % (key, value) for (key, value) in self.items]
+        for element in all_keys_list:
             element = self.delete_brackets(element)
-        return strings_list
+        return all_keys_list
 
-    def parse_multi_value(self):
-        values = self.dictionary.values()
+    def parse_multi_value(self, key, count):
+        values = self.delete_brackets(str(self.dictionary[key]))
 
 
 
-    def parse_single_value(self):
+    def parse_single_value(self, key):
         pass
 
     @staticmethod
     def delete_brackets(str):
         return re.sub('\[|\]|\(|\)', '', str)
+
+    @staticmethod
+    def sort_by_timestamp(values):
+        pass
+
 
 class CommandError(Exception):
     pass
