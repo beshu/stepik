@@ -1,5 +1,6 @@
 import asyncio
 import re
+import itertools
 
 class ClientServerProtocol(asyncio.Protocol):
     def connection_made(self, transport):
@@ -15,26 +16,31 @@ class ClientServerProtocol(asyncio.Protocol):
             self.transport.write(b"error\nwrong command\n\n")
         else:
             server_action = metric_handler.method
-            self.action(server_action)
+            self.action(server_action, metric_handler)
 
-    def action(self, server_action):
+    def action(self, server_action, handler):
         if server_action == 'put':
-            MetricHandler.add_metric()
+            handler.add_metric()
             self.transport.write(b"OK\n\n")
         elif server_action == 'get':
-            metric = MetricHandler.get_metric()
-            response = "ok\n{}\n\n".format(metric).encode()
+            metric_list = handler.get_metric()
+            response = "ok\n{}\n\n".format(metric_list).encode()
             self.transport.write(response)
 
     @staticmethod
     def create_handler(message):
         args = message.split()
-        return MetricHandler(*args)
+        return Metric(*args)
 
-class MetricHandler:
+    @staticmethod
+    def multi_val(data_list):
+        if len(data_list) > 3:
+            return True
+
+
+class Metric:
 
     metric_dict = {}
-    multi_vals = {}
 
     def __init__(self, method, key=None, value=None, timestamp=None):
         if method not in ('put', 'get'):
@@ -50,69 +56,73 @@ class MetricHandler:
         if self.key not in self.metric_dict.keys():
             return True
 
+    @property
+    def multi_val(self):
+        if len(self.get_values_global(self.key)) > 1:
+            return True
+
+    def get_values_global(self, key):
+        return self.metric_dict[key]
 
     def add_metric(self):
         if self.metric_not_found:
             self.metric_dict[self.key] = [(self.value, self.timestamp)]
-            self.multi_vals[self.key] = 0
         else:
             self.metric_update()
 
     def metric_update(self):
         value_list = self.metric_dict[self.key]
         new_value = value_list + [(self.value, self.timestamp)]
-        self.metric_dict[self.key] = new_value
-        self.multi_vals[self.key] += 1
+        self.metric_dict[self.key] = self.sorted_by_timestamp(new_value)
 
     def get_metric(self):
+        response_dict = {}
         try:
             if self.key == '*':
-                data = MetricParser.parse_all()
-            elif multi_vals[self.key] > 0:
-                data = MetricParser.parse_multi_value(self.key, multi_vals[self.key])
+                response_dict.update(self.metric_dict)
+                data_list = self.parse_all(response_dict)
             else:
-                data = MetricParser.parse_single_value(self.key)
+                response_dict.update({self.key: self.get_values_global(self.key)})
+                if self.multi_val:
+                    data_list = self.parse_multi(response_dict, self.key)
+                else:
+                    data_list = self.parse_single(response_dict, self.key)
+            return data_list
         except KeyError:
             raise CommandError
 
-class MetricParser:
-
-    def __init__(self):
-        self.dictionary = MetricHandler.metric_dict
-        self.keys = self.dictionary.keys()
-        self.values = self.dictionary.values()
-        self.items = self.dictionary.items()
-
-    def __repr__(self):
+    def parse_all(self, dct):
         pass
 
-    def parse_all(self):
-        all_keys_list = ['%s %s \n' % (key, value) for (key, value) in self.items]
-        for element in all_keys_list:
-            element = self.delete_brackets(element)
-        return all_keys_list
+    def parse_multi(self, dct, key):
+        strings_list = []
+        count = range(len(dct[key]))
+        values = dct[key]
+        i = 0
+        input_str = ''
+        for _ in count:
+            value = self.delete_brackets(str(values[i]))
+            formatted = '{}{}'.format(key, value)
+            input_str.join(formatted)
+            strings_list.append(input_str)
+            i += 1
+        return strings_list
 
-    def parse_multi_value(self, key, count):
-        values = self.delete_brackets(str(self.dictionary[key]))
-
-
-
-    def parse_single_value(self, key):
+    def parse_single(self, dct, key):
         pass
+
+    @staticmethod
+    def sorted_by_timestamp(value_list):
+        sorted_list = sorted(value_list, key = lambda timestamp: timestamp[1])
+        return sorted_list
 
     @staticmethod
     def delete_brackets(str):
         return re.sub('\[|\]|\(|\)', '', str)
 
-    @staticmethod
-    def sort_by_timestamp(values):
-        pass
 
-
-class CommandError(Exception):
+class CommandError(BaseException):
     pass
-
-
 
 loop = asyncio.get_event_loop()
 coro = loop.create_server(

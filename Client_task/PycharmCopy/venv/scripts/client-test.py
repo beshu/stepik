@@ -12,7 +12,7 @@ async def handle_echo(message, loop):
     print('Close the socket')
     writer.close()
 
-message = 'get random'
+message = 'get shushekk.cpu'
 loop = asyncio.get_event_loop()
 loop.run_until_complete(handle_echo(message, loop))
 loop.close()
